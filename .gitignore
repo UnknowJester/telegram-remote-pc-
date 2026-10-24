@@ -1,0 +1,21 @@
+# segreti e config personali
+.env
+
+# stato personale / generato
+bot.lock
+bot.log
+bot.log.*
+loonex_corrente.json
+richieste.md
+aliases.json
+
+# ambiente python
+venv/
+__pycache__/
+*.pyc
+dist/
+build/
+
+# OS
+.DS_Store
+Thumbs.db

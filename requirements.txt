@@ -1,0 +1,8 @@
+python-telegram-bot>=21
+pyautogui
+pillow
+python-dotenv
+pycaw
+faster-whisper
+av==16.1.0
+pyinstaller
