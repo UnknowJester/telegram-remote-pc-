@@ -77,6 +77,42 @@ def type_text(text: str):
     pyautogui.FAILSAFE = False
     pyautogui.write(text, interval=0.02)
 
+def clipboard_get() -> str:
+    import pyperclip
+    try:
+        return pyperclip.paste() or ""
+    except Exception:
+        return ""
+
+def clipboard_set(text: str):
+    import pyperclip
+    pyperclip.copy(text)
+
+
+async def scrivi(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    if not authorized(update):
+        await deny(update)
+        return
+    testo = update.message.text.partition(" ")[2]
+    if not testo.strip():
+        await update.message.reply_text("Uso: /scrivi breaking bad trailer")
+        return
+    try:
+        type_text(testo)
+        await update.message.reply_text("⌨️ Scritto.")
+    except Exception as e:
+        await update.message.reply_text(f"Errore: {e}")
+
+def _press_key(label: str):
+    """Premi un tasto via pyautogui; gestisce combinazioni tipo 'fn2+0'."""
+    import pyautogui
+    pyautogui.FAILSAFE = False
+    if "+" in label:
+        parts = [p.strip() for p in label.split("+")]
+        pyautogui.hotkey(*parts)
+    else:
+        pyautogui.press(label)
+
 def monitor_off():
     """Spegne solo il monitor (il PC resta attivo e il bot risponde).
     Usa il broadcast SC_MONITORPOWER: vale per qualsiasi monitor, ma il risveglio
@@ -342,6 +378,10 @@ def remote_keyboard() -> InlineKeyboardMarkup:
          InlineKeyboardButton("✖ Chiudi tab", callback_data="close")],
         [InlineKeyboardButton("📸 Foto schermo", callback_data="shot"),
          InlineKeyboardButton("🎬 Telecomando", callback_data="show_remote")],
+        [InlineKeyboardButton("🟥 Netflix", callback_data="app_netflix"),
+         InlineKeyboardButton("🟧 Crunchyroll", callback_data="app_crunchy")],
+        [InlineKeyboardButton("⏭ Salta intro (Netflix)", callback_data="skip_netflix"),
+         InlineKeyboardButton("⏭ Salta intro (Crunchy)", callback_data="skip_crunchy")],
         [InlineKeyboardButton("😴 Sospendi", callback_data="power_sleep"),
          InlineKeyboardButton("💤 Spegni 5s", callback_data="power_off5"),
          InlineKeyboardButton("✅ Annulla", callback_data="power_abort")],
@@ -451,10 +491,14 @@ async def start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         "• /ls [cartella] → elenca file • /get <nome> → cerca e invia file (anche grandi, a pezzi)\n"
         "• /openapp <nome> o scrivi `apri chrome` → apre programmi\n"
         "• /finestra <nome> o `vai su discord` → porta l'app in primo piano (o la avvia)\n"
-        "• /scheda <testo> o `scheda youtube` → passa alla scheda browser (anche stessa finestra)\n"
+        "• /scheda <testo> o `scheda loonex` → passa alla scheda browser (anche stessa finestra)\n"
         "• /finestre → elenca finestre aperte\n"
         "• /chiudi <nome> o `chiudi discord` → chiude la finestra (/chiudi solo = chiudi tab)\n"
         "• /newscheda [url] → nuova scheda • /riapri → riapre ultima scheda chiusa\n"
+        "• 🎬 telecomando serie: scrivi `netflix` o `crunchyroll` → apre il sito\n"
+        "• pulsanti Netflix/Crunchyroll + skip intro (tasti 's'/'n')\n"
+        "• /clip → mostra clipboard PC • /clip testo → copia nel PC\n"
+        "• /timer 30 → spegne il monitor tra 30 min • /schermo off|on → solo monitor\n"
         "• /riavvia [min] → riavvia (con conferma) • /schermo off|on → solo monitor\n"
         "• ✨ alias: scrivi `musica`/`film`, gestisci con /alias /aliasadd /aliasdel\n"
         "• /opencode <idea> → salva una richiesta di miglioramento per la prossima sessione\n"
@@ -494,6 +538,25 @@ async def buttons(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     os.remove(path)
                 except OSError:
                     pass
+            return
+        if action in ("app_netflix", "app_crunchy"):
+            url = "https://www.netflix.com" if action == "app_netflix" else "https://www.crunchyroll.com"
+            name = "Netflix" if action == "app_netflix" else "Crunchyroll"
+            webbrowser.open(url)
+            await q.message.reply_text(f"🎬 Apro {name}.", reply_markup=remote_keyboard())
+            return
+        if action in ("skip_netflix", "skip_crunchy"):
+            import pyautogui
+            pyautogui.FAILSAFE = False
+            if action == "skip_netflix":
+                # Netflix: bottone "Salta intro" con Ctrl+Shift+S? No, spazio+S? Usa tasto 's'? 
+                # Netflix supporta 's' per skip intro in alcuni client; fallback: premi invio sul bottone.
+                pyautogui.press("s")
+                await q.message.reply_text("⏭ Tentativo skip intro Netflix (tasto 's').", reply_markup=remote_keyboard())
+            else:
+                # Crunchyroll: tasto 'n' per next episode / skip
+                pyautogui.press("n")
+                await q.message.reply_text("⏭ Tentativo skip intro Crunchyroll (tasto 'n').", reply_markup=remote_keyboard())
             return
         if action == "cx":
             PENDING.pop(str(update.effective_user.id), None)
@@ -573,6 +636,14 @@ async def handle_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if low in ("screenshot", "foto", "foto schermo", "schermo", "mandami foto", "fammi vedere"):
         await send_screenshot(update)
         return
+    if "netflix" in low:
+        webbrowser.open("https://www.netflix.com")
+        await update.message.reply_text("🎬 Apro Netflix.", reply_markup=remote_keyboard())
+        return
+    if "crunchyroll" in low:
+        webbrowser.open("https://www.crunchyroll.com")
+        await update.message.reply_text("Anime Apro Crunchyroll.", reply_markup=remote_keyboard())
+        return
     me = re.match(r"^apri\s+(.+)$", low)
     if me:
         await open_app(update, me.group(1).strip())
@@ -588,20 +659,25 @@ async def handle_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(f"🪟 `{query}` non trovata, la avvio...", parse_mode="Markdown")
             await open_app(update, query)
         return
-    me = re.match(r"^(?:scheda|cambia scheda|vai alla scheda)\s+(.+)$", low)
-    if me:
-        import asyncio
-        query = me.group(1).strip()
-        status = await update.message.reply_text(f"📑 Cerco scheda `{query}`...", parse_mode="Markdown")
-        metodo, title = await asyncio.to_thread(switch_tab, query)
-        if title:
-            dove = "altra finestra" if metodo == "finestra" else "stessa finestra (Ctrl+Tab)"
-            await status.edit_text(f"📑 Trovata ({dove}):\n{title}")
-        else:
-            await status.edit_text(f"📑 Nessuna scheda con `{query}`.", parse_mode="Markdown")
-        return
     me = re.match(r"^(?:scrivi|digita|detta)\s+(.+)$", text, re.IGNORECASE)
     if me:
+        try:
+            type_text(me.group(1))
+            await update.message.reply_text("⌨️ Scritto.")
+        except Exception as e:
+            await update.message.reply_text(f"Errore: {e}")
+        return
+    me = re.match(r"^(?:led|luci tastiera)\s+(off|on|spento|acceso|spegni|accendi)$", low)
+    if me:
+        import asyncio
+        a = me.group(1).lower()
+        if a in ("off", "spento", "spegni"):
+            await asyncio.to_thread(led_off)
+            await update.message.reply_text("⌨️ LED tastiera spenti.")
+        else:
+            await asyncio.to_thread(led_on)
+            await update.message.reply_text("⌨️ LED tastiera accesi.")
+        return
         try:
             type_text(me.group(1))
             await update.message.reply_text("⌨️ Scritto.")
@@ -890,21 +966,69 @@ async def handle_voice(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await status.edit_text(f'🎤 "{testo}"\n⚠️ Errore: {e}')
 
-async def vol(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+async def timer(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """/timer 30 -> spegne il monitor tra 30 minuti."""
+    import asyncio as _aio
     if not authorized(update):
         await deny(update)
         return
     if not ctx.args:
-        await update.message.reply_text("Uso: /vol 0-100  (es. /vol 30)")
+        await update.message.reply_text("Uso: /timer 30  (minuti, spegne solo il monitor)")
+        return
+    try:
+        mins = max(1, int(ctx.args[0]))
+    except ValueError:
+        await update.message.reply_text("Dammi un numero di minuti.")
+        return
+    await update.message.reply_text(f"⏱️ Monitor spento tra {mins} min. /schermo on per riaccenderlo prima.")
+
+    async def _off():
+        await _aio.sleep(mins * 60)
+        monitor_off()
+    _aio.create_task(_off())
+    if not authorized(update):
+        await deny(update)
+        return
+    if not ctx.args:
+        await update.message.reply_text("Uso: /vol 0-100 [minuti]  (es. /vol 30 5 = 30% per 5 min)")
         return
     try:
         pct = int(ctx.args[0])
     except ValueError:
         await update.message.reply_text("Dammi un numero 0-100.")
         return
+    durata = None
+    if len(ctx.args) >= 2:
+        try:
+            durata = max(0, int(ctx.args[1]))
+        except ValueError:
+            pass
     try:
+        import asyncio as _aio
+        prev = None
+        try:
+            from pycaw.pycaw import AudioUtilities, IAudioEndpointVolume
+            from ctypes import cast, POINTER
+            from comtypes import CLSCTX_ALL
+            d = AudioUtilities.GetSpeakers()
+            iface = d.Activate(IAudioEndpointVolume._iid_, CLSCTX_ALL, None)
+            volobj = cast(iface, POINTER(IAudioEndpointVolume))
+            prev = int(round(volobj.GetMasterVolumeLevelScalar() * 100))
+        except Exception:
+            pass
         set_volume_percent(pct)
-        await update.message.reply_text(f"🔊 Volume impostato a {pct}%")
+        if durata and durata > 0:
+            async def _restore():
+                await _aio.sleep(durata * 60)
+                if prev is not None:
+                    try:
+                        set_volume_percent(prev)
+                    except Exception:
+                        pass
+            asyncio.create_task(_restore())
+            await update.message.reply_text(f"🔊 Volume impostato a {pct}% per {durata} min (poi torna a {prev}%).")
+        else:
+            await update.message.reply_text(f"🔊 Volume impostato a {pct}%")
     except Exception as e:
         log.exception("set volume")
         await update.message.reply_text(
@@ -912,7 +1036,30 @@ async def vol(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             "Usa i pulsanti 🔊/🔉 oppure installa pycaw: pip install pycaw"
         )
 
-async def scrivi(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+async def clip(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """/clip -> mostra clipboard PC. /clip testo -> scrive in clipboard PC."""
+    if not authorized(update):
+        await deny(update)
+        return
+    arg = (" ".join(ctx.args) if ctx.args else update.message.text.partition(" ")[2]).strip()
+    if arg:
+        try:
+            clipboard_set(arg)
+            await update.message.reply_text("📋 Copiato nella clipboard del PC.")
+        except Exception as e:
+            await update.message.reply_text(f"Errore: {e}")
+        return
+    try:
+        txt = clipboard_get()
+    except Exception as e:
+        await update.message.reply_text(f"Errore: {e}")
+        return
+    if not txt:
+        await update.message.reply_text("📋 Clipboard del PC vuota.")
+        return
+    if len(txt) > 3500:
+        txt = txt[:3500] + "\n... (troncato)"
+    await update.message.reply_text("📋 Clipboard del PC:\n```\n" + txt + "\n```", parse_mode="Markdown")
     if not authorized(update):
         await deny(update)
         return
@@ -1001,7 +1148,7 @@ async def riavvia(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         reply_markup=confirm_kb("riavvia"),
     )
 
-async def volyt(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+async def vol(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     """/volyt 50 -> volume del player YouTube/Netflix (richiede video in primo piano)."""
     import asyncio
     if not authorized(update):
@@ -1346,14 +1493,14 @@ async def finestra(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await open_app(update, query)
 
 async def scheda(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    """/scheda <testo> -> passa alla scheda browser che contiene il testo. Es: /scheda youtube"""
+    """/scheda <testo> -> passa alla scheda browser che contiene il testo. Es: /scheda loonex"""
     import asyncio
     if not authorized(update):
         await deny(update)
         return
     query = (" ".join(ctx.args).strip() if ctx.args else update.message.text.partition(" ")[2].strip())
     if not query:
-        await update.message.reply_text("Uso: /scheda youtube")
+        await update.message.reply_text("Uso: /scheda loonex")
         return
     status = await update.message.reply_text(f"📑 Cerco scheda `{query}`...", parse_mode="Markdown")
     metodo, title = await asyncio.to_thread(switch_tab, query)
@@ -1383,7 +1530,7 @@ def main():
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("telecomando", start))
     app.add_handler(CommandHandler("vol", vol))
-    app.add_handler(CommandHandler("volyt", volyt))
+    app.add_handler(CommandHandler("volyt", vol))
     app.add_handler(CommandHandler("scrivi", scrivi))
     app.add_handler(CommandHandler("blocca", blocca))
     app.add_handler(CommandHandler("sospendi", sospendi))
@@ -1399,6 +1546,8 @@ def main():
     app.add_handler(CommandHandler("chiudi", chiudi))
     app.add_handler(CommandHandler("newscheda", newscheda))
     app.add_handler(CommandHandler("riapri", riapri))
+    app.add_handler(CommandHandler("timer", timer))
+    app.add_handler(CommandHandler("clip", clip))
     app.add_handler(CommandHandler("riavvia", riavvia))
     app.add_handler(CommandHandler("schermo", schermo))
     app.add_handler(CommandHandler("alias", alias_cmd))
